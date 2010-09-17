@@ -92,7 +92,7 @@ module VirtualBox
           function :get_guest_property_value, WSTRING, [WSTRING]
           function :get_guest_property_timestamp, T_UINT64, [WSTRING]
           function :set_guest_property, nil, [WSTRING, WSTRING, WSTRING]
-          function :set_guest_propetty_value, nil, [WSTRING, WSTRING]
+          function :set_guest_property_value, nil, [WSTRING, WSTRING]
           function :enumerate_guest_properties, nil, [WSTRING, [:out, [WSTRING]], [:out, [WSTRING]], [:out, [T_UINT64]], [:out, [WSTRING]]]
           function :query_saved_thumbnail_size, nil, [[:out, T_UINT32], [:out, T_UINT32], [:out, T_UINT32]]
           function :read_saved_thumbnail_to_array, [T_UINT8], [T_BOOL, [:out, T_UINT32], [:out, T_UINT32]]
