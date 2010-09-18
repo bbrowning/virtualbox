@@ -69,13 +69,10 @@ module VirtualBox
     end
 
     # Set a guest property key-value pair. Overrides ruby hash implementation
-    # to set dirty state. Also prevents user from setting /VirtualBox/*
-    # properties. Otherwise, behaves the same way.
+    # to set dirty state. Otherwise, behaves the same way.
     def []=(key,value)
-      unless virtualbox_key?(key)
-        set_dirty!(key, self[key], value)
-        super
-      end
+      set_dirty!(key, self[key], value)
+      super
     end
 
     # Saves guest properties. This method does the same thing for both new
