@@ -197,6 +197,10 @@ module VirtualBox
         all.detect { |o| o.name == name || o.uuid == name }
       end
 
+      def create(name, type)
+        Global.global(true).create_machine(name, type)
+      end
+
       # Imports a VM, blocking the entire thread during this time.
       # When finished, on success, will return the VM object. This
       # VM object can be used to make any modifications necessary
@@ -658,6 +662,22 @@ module VirtualBox
 
       (1..max_boot).each do |position|
         interface.set_boot_order(position, value[position - 1])
+      end
+    end
+
+    def add_storage_controller(name, bus, type)
+      with_open_session do |session|
+        controller = session.machine.add_storage_controller(name, bus)
+        controller.controller_type = type
+        # Save the controller type
+        save_interface_attribute(:controller_type, controller)
+      end
+    end
+
+    def attach_storage(name, controller_port, device, device_type, storage_uuid)
+      with_open_session do |session|
+        session.machine.attach_device(name, controller_port, device,
+                                      device_type, storage_uuid)
       end
     end
   end
