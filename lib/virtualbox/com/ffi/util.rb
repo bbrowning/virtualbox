@@ -87,6 +87,7 @@ module VirtualBox
               "3d" => "3D",
               "bios" => "BIOS",
               "vrdp" => "VRDP",
+              "vrde" => "VRDE",
               "hw" => "HW",
               "png" => "PNG",
               "io" => "IO",
@@ -103,7 +104,8 @@ module VirtualBox
               "hdd" => "HDD",
               "rtc" => "RTC",
               "utc" => "UTC",
-              "io" => "IO"
+              "io" => "IO",
+              "vm" => "VM"
             }
 
             parts = string.to_s.split(/_/).collect do |part|

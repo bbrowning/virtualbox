@@ -147,8 +147,6 @@ module VirtualBox
     attribute :accessible, :readonly => true, :boolean => true
     attribute :hardware_version
     attribute :hardware_uuid
-    # TODO: Removed in 3.2.x, how should we handle this?
-    # attribute :statistics_update_interval
     attribute :firmware_type
     attribute :snapshot_folder
     attribute :settings_file_path, :readonly => true
@@ -170,7 +168,7 @@ module VirtualBox
     relationship :bios, :BIOS
     relationship :hw_virt, :HWVirtualization
     relationship :cpu, :CPU
-    relationship :vrdp_server, :VRDPServer
+    relationship :vrde_server, :VRDEServer
     relationship :storage_controllers, :StorageController, :dependent => :destroy
     relationship :medium_attachments, :MediumAttachment
     relationship :shared_folders, :SharedFolder
@@ -384,7 +382,7 @@ module VirtualBox
     # be modified with an open session on a machine. An open session is similar
     # to a write-lock. Once the session is completed, it must be closed, which
     # this method does as well.
-    def with_open_session
+    def with_open_session(mode=:write)
       # Set the session up
       session = Lib.lib.session
 
@@ -392,23 +390,23 @@ module VirtualBox
 
       if session.state != :open
         # Open up a session for this virtual machine
-        interface.parent.open_session(session, uuid)
+        interface.lock_machine(session, mode)
 
         # Mark the session to be closed
         close_session = true
       end
 
       # Yield the block with the session
-      yield session
+      yield session if block_given?
 
       # Close the session
       if close_session
         # Save these settings only if we're closing and only if the state
         # is not saved, since that doesn't allow the machine to be saved.
-        session.machine.save_settings if session.machine.state != :saved
+        session.machine.save_settings if mode == :write && session.machine.state != :saved
 
         # Close the session
-        session.close
+        session.unlock_machine
       end
     rescue Exception
       # Close the session so we don't get locked out. We use a rescue block
@@ -416,7 +414,7 @@ module VirtualBox
       # exception is raised. Otherwise, we may or may not close the session,
       # depending how deeply nested this call to `with_open_session` is.
       # (see close_session boolean above)
-      session.close if session.state == :open
+      session.unlock_machine if session.state == :open
 
       # Reraise the exception, we're not actually catching it to handle it
       raise
@@ -479,11 +477,9 @@ module VirtualBox
       # Open a new remote session, this will automatically start the machine
       # as well
       session = Lib.lib.session
-      interface.parent.open_remote_session(session, uuid, mode.to_s, "").wait_for_completion(-1)
+      interface.launch_vm_process(session, mode.to_s, "").wait
+      session.unlock_machine
       true
-    ensure
-      # Be sure to close that session!
-      session.close if session && session.state == :open
     end
 
     # Shuts down the VM by directly calling "acpipowerbutton". Depending on the
@@ -549,16 +545,10 @@ module VirtualBox
     # @param [String] command The command to run on controlvm
     # @return [Boolean] True if command was successful, false otherwise.
     def control(command, *args)
-      # Grab the session using an existing session
-      session = Lib.lib.session
-      interface.parent.open_existing_session(session, uuid)
-
-      # Send the proper command, waiting if we have to
-      result = session.console.send(command, *args)
-      result.wait_for_completion(-1) if result.is_a?(COM::Util.versioned_interface(:Progress))
-    ensure
-      # Close the session
-      session.close if session && session.state == :open
+      with_open_session(:shared) do |session|
+        result = session.console.send(command, *args)
+        result.wait if result.is_a?(COM::Util.versioned_interface(:Progress))
+      end
     end
 
     # Destroys the virtual machine. This method also removes all attached
@@ -573,30 +563,17 @@ module VirtualBox
     #     not only unregister attached media, but will also physically
     #     remove their respective data.
     def destroy(*args)
-      # Destroy all snapshots first (by destroying the root, all children
-      # are automatically destroyed)
-      if root_snapshot
-        destroy_snapshot = lambda do |snapshot|
-          return if snapshot.nil?
+      # Do a full cleanup on the machine, then delete all the media attached
+      media = interface.unregister(:full)
 
-          snapshot.children.each { |c| destroy_snapshot.call(c) }
-          snapshot.destroy
-        end
+      if !media.empty?
+        interface.delete(media)
 
-        destroy_snapshot.call(root_snapshot)
-
-        # Reload ourselves before continuing since snapshots do some
-        # crazy things.
-        reload
+        # TODO: This sleep is silly. The progress object returned by the media
+        # delete always fails to "wait" for some reason, so I do this. I hope
+        # to solve this issue soon.
+        sleep 1
       end
-
-      # Call super first so destroy is propogated through to relationships
-      # first
-      super
-
-      # Finally, destroy this machine and remove the settings file
-      interface.parent.unregister_machine(uuid)
-      interface.delete_settings
     end
 
     # Returns true if the virtual machine state is starting

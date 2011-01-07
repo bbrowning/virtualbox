@@ -1,4 +1,4 @@
-require 'rbconfig'
+require "rbconfig"
 
 module VirtualBox
   class Platform
@@ -20,7 +20,7 @@ module VirtualBox
       end
 
       def platform
-        RbConfig::CONFIG["target_os"].downcase
+        RbConfig::CONFIG["host_os"].downcase
       end
     end
   end

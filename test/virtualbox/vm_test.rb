@@ -217,16 +217,19 @@ class VMTest < Test::Unit::TestCase
         @interface.stubs(:parent).returns(@interface_parent)
       end
 
-      should "destroy snapshots, relationships, then the machine" do
+      should "do a full destroy and destroy the media" do
         destroy_seq = sequence("destroy_seq")
-        snapshot = mock("snapshot")
-        snapshot.stubs(:children).returns([])
-        @instance.stubs(:root_snapshot).returns(snapshot)
-        snapshot.expects(:destroy).once.in_sequence(destroy_seq)
-        @instance.expects(:reload).once.in_sequence(destroy_seq)
-        VirtualBox::StorageController.expects(:destroy_relationship).in_sequence(destroy_seq)
-        @interface_parent.expects(:unregister_machine).with(@instance.uuid).in_sequence(destroy_seq)
-        @interface.expects(:delete_settings).once.in_sequence(destroy_seq)
+        media = [1,2,3]
+        progress = mock("progress")
+        @interface.expects(:unregister).with(:full).once.returns(media).in_sequence(destroy_seq)
+        @interface.expects(:delete).with(media).once.returns(progress).in_sequence(destroy_seq)
+
+        @instance.destroy
+      end
+
+      should "not destroy media if there aren't any" do
+        @interface.expects(:unregister).with(:full).once.returns([])
+        @interface.expects(:delete).never
 
         @instance.destroy
       end
@@ -259,12 +262,11 @@ class VMTest < Test::Unit::TestCase
         @session.stubs(:state).returns(:open)
       end
 
-      should "open remote session using the given mode, wait for completion, then close" do
+      should "launch the VM with the given mode" do
         start_seq = sequence('start_seq')
         mode = "foo"
-        @parent.expects(:open_remote_session).with(@session, @uuid, mode, "").once.returns(@progress).in_sequence(start_seq)
-        @progress.expects(:wait_for_completion).with(-1).in_sequence(start_seq)
-        @session.expects(:close).in_sequence(start_seq)
+        @interface.expects(:launch_vm_process).with(@session, mode, "").once.returns(@progress).in_sequence(start_seq)
+        @progress.expects(:wait).in_sequence(start_seq)
         assert @instance.start(mode)
       end
 
@@ -278,12 +280,12 @@ class VMTest < Test::Unit::TestCase
       setup do
         setup_session_mocks
 
-        @parent.stubs(:open_existing_session)
-
         @console = mock("console")
         @console.stubs(:send)
         @session.stubs(:console).returns(@console)
         @session.stubs(:state).returns(:open)
+
+        @instance.stubs(:with_open_session).yields(@session)
 
         @method = :foo
       end
@@ -291,9 +293,8 @@ class VMTest < Test::Unit::TestCase
       should "get an existing, session, send the command, and close" do
         method = :foo
         control_seq = sequence("control_seq")
-        @parent.expects(:open_existing_session).with(@session, @uuid).once.in_sequence(control_seq)
+        @instance.expects(:with_open_session).with(:shared).yields(@session).in_sequence(control_seq)
         @console.expects(:send).with(@method).once.in_sequence(control_seq)
-        @session.expects(:close).in_sequence(control_seq)
 
         @instance.control(@method)
       end
@@ -301,7 +302,7 @@ class VMTest < Test::Unit::TestCase
       should "wait for completion if an IProgress is returned" do
         progress = mock("IProgress")
         progress.stubs(:is_a?).with(VirtualBox::COM::Util.versioned_interface(:Progress)).returns(true)
-        progress.expects(:wait_for_completion).with(-1).once
+        progress.expects(:wait).once
         @console.expects(:send).with(@method).returns(progress)
         @instance.control(@method)
       end
@@ -394,12 +395,12 @@ class VMTest < Test::Unit::TestCase
         @locked_interface.stubs(:state).returns(:powered_off)
         @session.stubs(:machine).returns(@locked_interface)
         @session.stubs(:state).returns(:closed)
-        @parent.stubs(:open_session)
+        @interface.stubs(:lock_machine)
       end
 
       should "close the session if an exception is raised" do
         @locked_interface.expects(:save_settings).raises(Exception)
-        @session.expects(:close).once
+        @session.expects(:unlock_machine).once
 
         assert_raises(Exception) do
           @instance.with_open_session do
@@ -413,23 +414,31 @@ class VMTest < Test::Unit::TestCase
         save_seq = sequence("save_seq")
         @proc = Proc.new {}
 
-        @parent.expects(:open_session).with(@session, @uuid).in_sequence(save_seq)
+        @interface.expects(:lock_machine).with(@session, :write).in_sequence(save_seq)
         @proc.expects(:call).with(@session).once.in_sequence(save_seq)
         @locked_interface.expects(:save_settings).once.in_sequence(save_seq)
-        @session.expects(:close).in_sequence(save_seq)
+        @session.expects(:unlock_machine).in_sequence(save_seq)
 
         @instance.with_open_session do |session|
           @proc.call(session)
         end
       end
 
+      should "open the session with the shared type and NOT save settings" do
+        @interface.expects(:lock_machine).with(@session, :shared)
+        @session.expects(:unlock_machine)
+        @locked_interface.expects(:save_settings).never
+
+        @instance.with_open_session(:shared)
+      end
+
       should "not save settings when the state is saved" do
         @locked_interface.stubs(:state).returns(:saved)
 
         save_seq = sequence("save_seq")
-        @parent.expects(:open_session).with(@session, @uuid).in_sequence(save_seq)
+        @interface.expects(:lock_machine).with(@session, :write).in_sequence(save_seq)
         @locked_interface.expects(:save_settings).never
-        @session.expects(:close).in_sequence(save_seq)
+        @session.expects(:unlock_machine).in_sequence(save_seq)
 
         @instance.with_open_session { |session| }
       end
@@ -437,9 +446,9 @@ class VMTest < Test::Unit::TestCase
       should "only open the session and close once" do
         open_seq = sequence("open_seq")
 
-        @parent.expects(:open_session).with(@session, @uuid).in_sequence(open_seq)
+        @interface.expects(:lock_machine).with(@session, :write).in_sequence(open_seq)
         @locked_interface.expects(:save_settings).once.in_sequence(open_seq)
-        @session.expects(:close).once.in_sequence(open_seq)
+        @session.expects(:unlock_machine).once.in_sequence(open_seq)
 
         @instance.with_open_session do |session|
           session.stubs(:state).returns(:open)
