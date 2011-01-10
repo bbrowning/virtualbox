@@ -77,6 +77,12 @@ module VirtualBox
       existing_record!
     end
 
+    def create_machine(name, type)
+      imachine = lib.virtualbox.create_machine(name, type)
+      lib.virtualbox.register_machine(imachine)
+      VirtualBox::VM.find(imachine.id)
+    end
+
     def load_relationship(name)
       # "Lazy loaded" associations table. These associate the relationship
       # with the data it needs to load. The data is wrapped in lambdas so

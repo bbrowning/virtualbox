@@ -124,6 +124,7 @@ module VirtualBox
   #     relationship :medium_attachments, :MediumAttachment
   #     relationship :shared_folders, :SharedFolder
   #     relationship :extra_data, :ExtraData
+  #     relationship :guest_property, :GuestProperty
   #     relationship :forwarded_ports, :ForwardedPort
   #     relationship :network_adapters, :NetworkAdapter
   #     relationship :usb_controller, :USBController
@@ -174,6 +175,7 @@ module VirtualBox
     relationship :medium_attachments, :MediumAttachment
     relationship :shared_folders, :SharedFolder
     relationship :extra_data, :ExtraData
+    relationship :guest_property, :GuestProperty
     relationship :forwarded_ports, :ForwardedPort, :version => "3.1"
     relationship :network_adapters, :NetworkAdapter
     relationship :usb_controller, :USBController
@@ -193,6 +195,10 @@ module VirtualBox
       # @return [VM]
       def find(name)
         all.detect { |o| o.name == name || o.uuid == name }
+      end
+
+      def create(name, type)
+        Global.global(true).create_machine(name, type)
       end
 
       # Imports a VM, blocking the entire thread during this time.
@@ -656,6 +662,22 @@ module VirtualBox
 
       (1..max_boot).each do |position|
         interface.set_boot_order(position, value[position - 1])
+      end
+    end
+
+    def add_storage_controller(name, bus, type)
+      with_open_session do |session|
+        controller = session.machine.add_storage_controller(name, bus)
+        controller.controller_type = type
+        # Save the controller type
+        save_interface_attribute(:controller_type, controller)
+      end
+    end
+
+    def attach_storage(name, controller_port, device, device_type, storage_uuid)
+      with_open_session do |session|
+        session.machine.attach_device(name, controller_port, device,
+                                      device_type, storage_uuid)
       end
     end
   end
