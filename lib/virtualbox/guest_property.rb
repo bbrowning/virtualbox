@@ -79,15 +79,18 @@ module VirtualBox
     # and existing guest properties, since virtualbox will overwrite old data or
     # create it if it doesn't exist.
     def save
-      changes.each do |key, value|
-        unless virtualbox_key?(key)
-          interface.set_guest_property_value(key.to_s, value[1].to_s)
+      parent.with_open_session do |session|
+        machine = session.machine
+        changes.each do |key, value|
+          unless virtualbox_key?(key)
+            machine.set_guest_property_value(key.to_s, value[1].to_s)
 
-          clear_dirty!(key)
+            clear_dirty!(key)
 
-          if value[1].nil?
-            # Remove the key from the hash altogether
-            hash_delete(key.to_s)
+            if value[1].nil?
+              # Remove the key from the hash altogether
+              hash_delete(key.to_s)
+            end
           end
         end
       end
